@@ -3,6 +3,7 @@ package io.github.artcraftandroid.gridcraft.ui.editor
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,12 +11,22 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import io.github.artcraftandroid.gridcraft.ui.AppViewModel
 import io.github.artcraftandroid.gridcraft.ui.GridColors
 
@@ -50,21 +61,73 @@ fun EditorScreen(vm: AppViewModel) {
         Box(Modifier.fillMaxSize().background(GridColors.StatusBand).statusBarsPadding().navigationBarsPadding().imePadding()) { CardsScreen(vm, t) }
         return
     }
-    Column(Modifier.fillMaxSize().background(GridColors.StatusBand).statusBarsPadding().navigationBarsPadding().imePadding()) {
-        // typing in a shape hides the header, as the phone app does, and so does the open palette
-        // (not Tell Me, which leaves the sheet in view)
+    val screenFocus = remember { FocusRequester() }
+    LaunchedEffect(vm.editing, vm.findOpen, vm.dialog, vm.editingShapeText, vm.moreOpen) {
+        if (!vm.editing && !vm.findOpen && vm.dialog == null && vm.editingShapeText == null && !vm.moreOpen) {
+            runCatching { screenFocus.requestFocus() }
+        }
+    }
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(GridColors.StatusBand)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .imePadding()
+            .focusRequester(screenFocus)
+            .focusable()
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val typingInField = vm.editing || vm.editingShapeText != null || vm.findOpen || vm.dialog != null
+                if (typingInField) return@onPreviewKeyEvent false
+
+                val ctrl = event.isCtrlPressed || event.isMetaPressed
+                if (ctrl && event.key == Key.V) {
+                    vm.paste()
+                    return@onPreviewKeyEvent true
+                }
+
+                val obj = vm.selectedObject
+                if (obj != null) {
+                    val locked = vm.isObjectLocked(obj.id.toLong())
+                    val step = if (event.isShiftPressed) 10f else 1f
+                    when (event.key) {
+                        Key.DirectionUp -> {
+                            if (!locked) vm.nudgeSelectedObject(0f, -step)
+                            return@onPreviewKeyEvent true
+                        }
+                        Key.DirectionDown -> {
+                            if (!locked) vm.nudgeSelectedObject(0f, step)
+                            return@onPreviewKeyEvent true
+                        }
+                        Key.DirectionLeft -> {
+                            if (!locked) vm.nudgeSelectedObject(-step, 0f)
+                            return@onPreviewKeyEvent true
+                        }
+                        Key.DirectionRight -> {
+                            if (!locked) vm.nudgeSelectedObject(step, 0f)
+                            return@onPreviewKeyEvent true
+                        }
+                        Key.Delete, Key.Backspace -> {
+                            if (!locked) vm.deleteObject()
+                            return@onPreviewKeyEvent true
+                        }
+                        else -> Unit
+                    }
+                }
+                false
+            },
+    ) {
         val tellMe = vm.paletteOpen && vm.tellMeOpen && vm.panels.isEmpty()
         if (vm.findOpen) FindBar(vm) else if (vm.editingShapeText == null && !vm.cropping && (!vm.paletteOpen || tellMe)) EditorHeader(vm)
         val formulaBar = vm.showFormulaBar || vm.editing
         Box(Modifier.weight(1f).fillMaxWidth()) {
             GridView(vm, Modifier.fillMaxSize())
-            // what is typed in the formula bar below gets its help just above it
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
                 FunctionSuggestions(vm)
                 ListSuggestions(vm)
                 SignatureTip(vm)
             }
-            // the ⋯ sheet dims the grid; a tap there closes it
             if (vm.moreOpen) Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0x66000000)).clickable { vm.moreOpen = false })
         }
         EditorDialog(vm)
@@ -83,13 +146,11 @@ fun EditorScreen(vm: AppViewModel) {
         } else if (tellMe) {
             TellMeSheet(vm, Modifier.fillMaxWidth())
         } else if (vm.paletteOpen) {
-            // several cells: their figures take the formula bar's place
             if (showsAggregates(vm)) AggregateBar(vm) else if (formulaBar) FormulaBar(vm)
             PaletteSheet(vm, Modifier.fillMaxWidth().height(PALETTE_HEIGHT))
         } else {
             if (vm.comment != null && !vm.editing) CommentCard(vm) else if (!vm.editing) InputMessage(vm)
             if (showsAggregates(vm)) AggregateBar(vm) else if (formulaBar) FormulaBar(vm)
-            // typing, the keyboard takes the command bar's place
             if (!vm.editing) {
                 if (vm.sheetsBar) SheetsBar(vm) else CommandBar(vm)
             }
