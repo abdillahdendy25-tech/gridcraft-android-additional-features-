@@ -582,7 +582,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (o != null) sheetsBar = false
         cropping = false
         if (o != null && paletteOpen) showTab(contextTab ?: paletteTab)
-        if (o == null && paletteTab in setOf("Chart", "Picture", "Shape", "Graphics")) paletteTab = contextTab ?: "Home"
+        if (o == null && paletteTab in setOf("Chart", "Picture", "Shape", "Graphics")) paletteTab = "Home"
     }
 
     /** Put the selected object at (`x`, `y`), `w` × `h` (sheet units): its anchor cell and the offset in it. */
